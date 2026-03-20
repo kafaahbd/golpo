@@ -11,6 +11,7 @@ export interface User {
   lastSeen?: number;
   createdAt?: string[];
   archivedChats?: string[];
+  pinnedChats?: string[];
   
 }
 

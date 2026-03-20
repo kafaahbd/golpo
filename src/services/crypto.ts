@@ -85,36 +85,42 @@ export async function decryptMessage(
   encryptedJson: string,
   privateKey?: CryptoKey,
 ): Promise<string> {
-  // Handle non-JSON plain text (legacy)
+  if (!encryptedJson) return '';
+
+  // Plain text (no JSON) — return as-is
   if (!encryptedJson.startsWith('{')) return encryptedJson;
 
   try {
     const parsed = JSON.parse(encryptedJson);
 
-    // Plaintext fallback format — always readable
+    // ✅ Plaintext format — always readable by everyone
     if (parsed.plaintext !== undefined) return parsed.plaintext;
 
-    // Needs decryption but no private key
-    if (!privateKey) return '[Encrypted message]';
+    // RSA+AES encrypted format — needs private key
+    if (parsed.encryptedKey && parsed.iv && parsed.ciphertext) {
+      if (!privateKey) {
+        return '🔒 Encrypted message (key not available)';
+      }
+      try {
+        const encKeyBuf   = Uint8Array.from(atob(parsed.encryptedKey), (c) => c.charCodeAt(0));
+        const ivBuf       = Uint8Array.from(atob(parsed.iv),           (c) => c.charCodeAt(0));
+        const cipherBuf   = Uint8Array.from(atob(parsed.ciphertext),   (c) => c.charCodeAt(0));
 
-    const { encryptedKey, iv, ciphertext } = parsed as EncryptedMessage;
-    if (!encryptedKey || !iv || !ciphertext) return '[Encrypted message]';
+        const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, encKeyBuf);
+        const aesKey = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
+        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, aesKey, cipherBuf);
+        return new TextDecoder().decode(decrypted);
+      } catch {
+        // Decryption failed — key mismatch (message sent before key rotation)
+        return '🔒 Encrypted (old message)';
+      }
+    }
 
-    const encKeyBuf = Uint8Array.from(atob(encryptedKey), (c) => c.charCodeAt(0));
-    const ivBuf = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0));
-    const ciphertextBuf = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));
-
-    const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, encKeyBuf);
-    const aesKey = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, aesKey, ciphertextBuf);
-    return new TextDecoder().decode(decrypted);
+    // Unknown format — show raw if short, otherwise generic label
+    return encryptedJson.length < 100 ? encryptedJson : '🔒 Encrypted message';
   } catch {
-    // Last resort: try to show something readable
-    try {
-      const parsed = JSON.parse(encryptedJson);
-      if (parsed.plaintext) return parsed.plaintext;
-    } catch {}
-    return '[Encrypted message]';
+    // JSON parse failed
+    return encryptedJson.length < 200 ? encryptedJson : '🔒 Encrypted message';
   }
 }
 

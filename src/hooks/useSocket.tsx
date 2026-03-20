@@ -7,7 +7,7 @@ import { decryptMessage } from '@/services/crypto';
 import type { Message } from '@/types';
 
 export function useSocket() {
-  const { token, user, keyPair } = useAuthStore();
+  const { token, user, keyPair, _hydrated } = useAuthStore();
   const {
     addMessage, updateMessage, removeMessage, replaceOptimisticMessage,
     setTyping, setUserOnline, updateChat,
@@ -28,7 +28,8 @@ export function useSocket() {
   }, [keyPair]);
 
   useEffect(() => {
-    if (!token) return;
+    // Wait for Zustand to rehydrate before connecting socket
+    if (!_hydrated || !token) return;
 
     const socket = socketService.connect(token);
 
@@ -141,5 +142,5 @@ export function useSocket() {
       socket.off('call:ended', onCallEnded);
       socket.off('call:rejected', onCallRejected);
     };
-  }, [token, user?.id, keyPair]);
+  }, [token, user?.id, keyPair, _hydrated]);
 }

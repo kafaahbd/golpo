@@ -14,8 +14,8 @@ const FIREBASE_CONFIG = {
 };
 
 export async function initFirebaseMessaging(): Promise<string | null> {
-  if (!FIREBASE_CONFIG.apiKey) {
-    console.warn('Firebase not configured — push notifications disabled');
+  // Skip entirely if Firebase is not configured
+  if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.projectId) {
     return null;
   }
 
@@ -27,17 +27,14 @@ export async function initFirebaseMessaging(): Promise<string | null> {
       initialized = true;
     }
 
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      messaging.useServiceWorker(reg);
-    }
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return null;
 
-    // Request permission
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return null;
 
-    // Get FCM token
+    const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    messaging.useServiceWorker(reg);
+
     const token = await messaging.getToken({
       vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
     });
@@ -48,7 +45,7 @@ export async function initFirebaseMessaging(): Promise<string | null> {
     }
     return null;
   } catch (err) {
-    console.error('Firebase messaging init failed:', err);
+    // Silent fail — notifications are optional
     return null;
   }
 }
